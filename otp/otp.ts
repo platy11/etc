@@ -3,17 +3,24 @@
 
 import { encode as encodeBase32, decode as decodeBase32 } from './base32'
 
+/**
+ * Validates a Time-based One Time Password (TOTP) as specified in RFC 6238.
+ * @param secret the base32-encoded HMAC shared secret
+ * @param input the one-time code entered by the user
+ * @param periodRange the range of time periods to consider valid. Default 1
+ * (one-time code may be up to 30 seconds too old or new)
+ */
 export async function verifyTotp(
     secret: string,
     input: number,
-    periodRange: number
+    periodRange: number = 1
 ): Promise<boolean> {
     let key = await decodeKey(secret)
     let now = Date.now()
     for (let i = 0; i < periodRange; i++) {
         if (
-            await totp(key, now, i) === input ||
-            i != 0 && await totp(key, now, -i) === input
+            await totp(key, now + i * 30000) === input ||
+            i != 0 && await totp(key, now - i * 30000) === input
         ) {
             return true
         }
@@ -21,6 +28,12 @@ export async function verifyTotp(
     return false
 }
 
+/**
+ * Verifies a HMAC-based One Time Password (HOTP) as specifed in RFC 4226.
+ * @param secret the base32-encoded HMAC shared secret
+ * @param input the one-time code entered by the user
+ * @param c the HOTP counter
+ */
 export async function verifyHotp(
     secret: string,
     input: number,
@@ -30,10 +43,15 @@ export async function verifyHotp(
     return await hotp(k, c) === input
 }
 
-export async function decodeKey(secret: string): Promise<CryptoKey> {
+/**
+ * Converts a base32 encoded OTP secret string to a CryptoKey for use in
+ * {@link hotp} and {@link totp}
+ * @param keystr the base32-encoded HMAC shared secret
+ */
+export async function decodeKey(keystr: string): Promise<CryptoKey> {
     return await crypto.subtle.importKey(
         'raw',
-        decodeBase32(secret).buffer,
+        decodeBase32(keystr).buffer,
         {
             name: 'HMAC',
             hash: 'SHA-1'
@@ -43,18 +61,28 @@ export async function decodeKey(secret: string): Promise<CryptoKey> {
     )
 }
 
-export async function totp(k: CryptoKey, time: number, offset: number): Promise<number> {
-    let c = time / 30000 + offset
+/**
+ * Generates a Time-based One Time Password (TOTP) as specified in RFC 6238.
+ * @param k the HMAC shared secret as parsed by {@link decodeKey}
+ * @param time the Unix time to generate the code for
+ */
+export async function totp(k: CryptoKey, time: number): Promise<number> {
+    let c = time / 30000
     return hotp(k, c)
 }
 
+/**
+ * Generates a HMAC-based One Time Password (HOTP) as specifed in RFC 4226.
+ * @param k the HMAC shared secret as parsed by {@link decodeKey}
+ * @param c the HOTP counter
+ */
 export async function hotp(k: CryptoKey, c: number): Promise<number> {
     let hmac = new Uint8Array(await crypto.subtle.sign(
         'HMAC',
         k,
-        // Convert c to an 8 byte number, per the HOTP specification (RFC 4226).
-        // JS numbers are only 53 bits, so zero the first byte and mask the second
-        // with 0x1f
+        // Convert c to an 8 byte number
+        // JS numbers are only 53 bits, so zero the first byte and mask the
+        // second with 0x1f
         new Uint8Array([
             0,
             (c & 0x001f000000000000) >> 48,
@@ -68,6 +96,7 @@ export async function hotp(k: CryptoKey, c: number): Promise<number> {
     ))
     let offset = hmac[19] & 0x0f
     // Convert 4 bytes starting at the offset to a number
+    // Per RFC, only extract 31 bits
     let bincode =
         (hmac[offset]     & 0x7f) << 24 |
         (hmac[offset + 1] & 0xff) << 16 |
@@ -76,7 +105,10 @@ export async function hotp(k: CryptoKey, c: number): Promise<number> {
     return bincode % 10 ** 6
 }
 
-export async function generateTotpSecret(): Promise<string> {
+/**
+ * Generates a new base32-encoded HMAC shared secret for HOTP and TOTP.
+ */
+export async function generateOtpSecret(): Promise<string> {
     let key = await crypto.subtle.generateKey({
         name: 'HMAC',
         hash: {
@@ -87,6 +119,13 @@ export async function generateTotpSecret(): Promise<string> {
     return encodeBase32(new Uint8Array(bytes))
 }
 
+/**
+ * Creates a 'otpauth://' scheme URI. This can be used in a QR code to allow a
+ * mobile authenticator app to be quickly set up.
+ * @param username the user's username or other ID
+ * @param secret the base32-encoded HMAC shared secret
+ * @param issuer the name of the service the codes will be used to access
+ */
 export function googleAuthenticatorTotpURI(
     username: string,
     secret: string,
