@@ -1,5 +1,5 @@
 /*
-    This is a modification of encoding/base32.ts from the Deno standard library:
+    This is encoding/base32.ts from the Deno standard library:
     https://deno.land/std@0.74.0/encoding/base32.ts,
     which itself was derived from https://github.com/beatgammit/base64-js.
     
@@ -59,9 +59,9 @@ function getLens(b32: string): [number, number] {
 }
 
 /**
-* Returns number of bytes encoded in the given RFC4648 base32 string input.
-* @param b32
-*/
+ * Returns number of bytes encoded in the given RFC4648 base32 string input.
+ * @param b32
+ */
 export function byteLength(b32: string): number {
     const [validLen, placeHoldersLen] = getLens(b32);
     return _byteLength(validLen, placeHoldersLen);
@@ -72,9 +72,9 @@ function _byteLength(validLen: number, placeHoldersLen: number): number {
 }
 
 /**
-* Decodes a given RFC4648 base32 encoded string.
-* @param b32
-*/
+ * Decodes a given RFC4648 base32 encoded string.
+ * @param b32
+ */
 export function decode(b32: string): Uint8Array {
     let tmp: number;
     const [validLen, placeHoldersLen] = getLens(b32);
@@ -166,9 +166,9 @@ function encodeChunk(uint8: Uint8Array, start: number, end: number): string {
 }
 
 /**
-* Encodes a given Uint8Array into RFC4648 base32 representation
-* @param uint8
-*/
+ * Encodes a given Uint8Array into RFC4648 base32 representation
+ * @param uint8
+ */
 export function encode(uint8: Uint8Array): string {
     let tmp: number;
     const len = uint8.length;
@@ -187,5 +187,44 @@ export function encode(uint8: Uint8Array): string {
             ),
         );
     }
+
+    // pad the end with zeros, but make sure to not forget the extra bytes
+    if (extraBytes === 4) {
+        tmp = ((uint8[len2] & 0xff) << 16) |
+            ((uint8[len2 + 1] & 0xff) << 8) |
+            (uint8[len2 + 2] & 0xff);
+        parts.push(lookup[(tmp >> 19) & 0x1f]);
+        parts.push(lookup[(tmp >> 14) & 0x1f]);
+        parts.push(lookup[(tmp >> 9) & 0x1f]);
+        parts.push(lookup[(tmp >> 4) & 0x1f]);
+        tmp = ((tmp & 0xf) << 11) | (uint8[len2 + 3] << 3);
+        parts.push(lookup[(tmp >> 10) & 0x1f]);
+        parts.push(lookup[(tmp >> 5) & 0x1f]);
+        parts.push(lookup[tmp & 0x1f]);
+        parts.push("=");
+    } else if (extraBytes === 3) {
+        tmp = ((uint8[len2] & 0xff) << 17) |
+            ((uint8[len2 + 1] & 0xff) << 9) |
+            ((uint8[len2 + 2] & 0xff) << 1);
+        parts.push(lookup[(tmp >> 20) & 0x1f]);
+        parts.push(lookup[(tmp >> 15) & 0x1f]);
+        parts.push(lookup[(tmp >> 10) & 0x1f]);
+        parts.push(lookup[(tmp >> 5) & 0x1f]);
+        parts.push(lookup[tmp & 0x1f]);
+        parts.push("===");
+    } else if (extraBytes === 2) {
+        tmp = ((uint8[len2] & 0xff) << 12) | ((uint8[len2 + 1] & 0xff) << 4);
+        parts.push(lookup[(tmp >> 15) & 0x1f]);
+        parts.push(lookup[(tmp >> 10) & 0x1f]);
+        parts.push(lookup[(tmp >> 5) & 0x1f]);
+        parts.push(lookup[tmp & 0x1f]);
+        parts.push("====");
+    } else if (extraBytes === 1) {
+        tmp = (uint8[len2] & 0xff) << 2;
+        parts.push(lookup[(tmp >> 5) & 0x1f]);
+        parts.push(lookup[tmp & 0x1f]);
+        parts.push("======");
+    }
+
     return parts.join("");
 }

@@ -1,7 +1,7 @@
-// Copyright 2020, Max E.
+// Copyright 2020 Max E (platy11).
 // Released under the terms of the ISC License.
 
-import { encode as encodeBase32, decode as decodeBase32 } from './base32'
+import { encode as encodeBase32, decode as decodeBase32 } from './vendor/base32'
 
 /**
  * Validates a Time-based One Time Password (TOTP) as specified in RFC 6238.
