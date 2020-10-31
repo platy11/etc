@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/sha512"
+	"flag"
 	"fmt"
 	"hash"
 	"io"
@@ -19,22 +20,44 @@ import (
 
 var errUnknownAlgorithm = fmt.Errorf("unknown algorithm")
 
+func init() {
+	flag.Usage = func() {
+		fmt.Fprintf(flag.CommandLine.Output(), `hashsum usage:
+
+hashsum [option]... [algorithm]... [file]...
+
+Prints checksums. When '-' or no files are specified, standard input is read.
+
+Options:
+`)
+		flag.PrintDefaults()
+		fmt.Fprintf(flag.CommandLine.Output(), `
+Supported algorithms:
+	md4, md5, sha1, sha224, sha256, sha384, sha512, sha512/224, sha512/256,
+	sha3-224, sha3-256, sha3-384, sha3-512, blake2s-256, blake2b-256,
+	blake2b-384, blake2b-512 and aliases`)
+	}
+	flag.Int("hello", 0, "help")
+	flag.Parse()
+}
+
 func main() {
-	//
+	args := flag.Args()
+	if len(args) == 0 {
+		flag.Usage()
+		os.Exit(1)
+	}
 	var filesStart int = 1
-	for i, arg := range os.Args[1:] {
+	for i, arg := range args {
 		if _, err := parseAlgArg(arg); err == errUnknownAlgorithm {
 			filesStart = i
 			break
 		} else if err != nil {
 			panic(fmt.Errorf("error creating %v hasher: %w", arg, err))
 		}
-		fmt.Println(i)
 	}
-	algorithms := os.Args[1 : filesStart+1]
-	filenames := os.Args[filesStart+1:]
-
-	fmt.Println(algorithms, filenames)
+	algorithms := args[:filesStart]
+	filenames := args[filesStart:]
 
 	if len(algorithms) == 0 {
 		panic(fmt.Errorf("you must specify at least one hash function"))
