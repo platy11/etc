@@ -7,8 +7,9 @@ import { encode as encodeBase32, decode as decodeBase32 } from './vendor/base32'
  * Validates a Time-based One Time Password (TOTP) as specified in RFC 6238.
  * @param secret the base32-encoded HMAC shared secret
  * @param input the one-time code entered by the user
- * @param periodRange the range of time periods to consider valid. Default 1
- * (one-time code may be up to 30 seconds too old or new)
+ * @param periodRange the range of time periods to consider valid to allow for
+ * factors such as clocks being out of sync. Default is 1 (one-time code may be
+ * up to 30 seconds too old or new)
  */
 export async function verifyTotp(
     secret: string,
@@ -19,11 +20,9 @@ export async function verifyTotp(
     let now = Date.now()
     for (let i = 0; i < periodRange; i++) {
         if (
-            await totp(key, now + i * 30000) === input ||
-            i != 0 && await totp(key, now - i * 30000) === input
-        ) {
-            return true
-        }
+            await totp(key, now - i * 30000) === input ||
+            i != 0 && await totp(key, now + i * 30000) === input
+        ) return true
     }
     return false
 }
@@ -62,16 +61,6 @@ export async function decodeKey(keystr: string): Promise<CryptoKey> {
 }
 
 /**
- * Generates a Time-based One Time Password (TOTP) as specified in RFC 6238.
- * @param k the HMAC shared secret as parsed by {@link decodeKey}
- * @param time the Unix time to generate the code for
- */
-export async function totp(k: CryptoKey, time: number): Promise<number> {
-    let c = time / 30000
-    return hotp(k, c)
-}
-
-/**
  * Generates a HMAC-based One Time Password (HOTP) as specifed in RFC 4226.
  * @param k the HMAC shared secret as parsed by {@link decodeKey}
  * @param c the HOTP counter
@@ -96,13 +85,24 @@ export async function hotp(k: CryptoKey, c: number): Promise<number> {
     ))
     let offset = hmac[19] & 0x0f
     // Convert 4 bytes starting at the offset to a number
-    // Per RFC, only extract 31 bits
+    // Per the RFC, drop the first bit to avoid confusion about the number
+    // being signed/unsigned
     let bincode =
         (hmac[offset]     & 0x7f) << 24 |
         (hmac[offset + 1] & 0xff) << 16 |
         (hmac[offset + 2] & 0xff) <<  8 |
         (hmac[offset + 3] & 0xff)
     return bincode % 10 ** 6
+}
+
+/**
+ * Generates a Time-based One Time Password (TOTP) as specified in RFC 6238.
+ * @param k the HMAC shared secret as parsed by {@link decodeKey}
+ * @param time the Unix time to generate the code for
+ */
+export async function totp(k: CryptoKey, time: number): Promise<number> {
+    let c = time / 30000
+    return hotp(k, c)
 }
 
 /**
@@ -131,11 +131,12 @@ export function googleAuthenticatorTotpURI(
     secret: string,
     issuer: string
 ): string {
-    let params = new URLSearchParams()
-    params.set('secret', secret)
-    params.set('issuer', issuer)
-    params.set('algorithm', 'SHA1')
-    params.set('digits', '6')
-    params.set('period', '30')
+    let params = new URLSearchParams({
+        secret,
+        issuer,
+        algorithm: 'SHA1',
+        digits: 6,
+        period: 30
+    })
     return `otpauth://totp/${issuer}:${username}?${params.toString()}`
 }
